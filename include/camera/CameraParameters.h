@@ -695,6 +695,7 @@ public:
     static const char KEY_GPU_EFFECT_PARAM_1[];
     static const char KEY_GPU_EFFECT_PARAM_2[];
     static const char KEY_GPU_EFFECT_PARAM_3[];
+    static const char KEY_FORCE_USE_AUDIO_ENABLED[];
 #endif
 
     static const char KEY_AE_BRACKET_HDR[];
@@ -744,6 +745,15 @@ public:
     static const char EFFECT_WHITEBOARD[];
     static const char EFFECT_BLACKBOARD[];
     static const char EFFECT_AQUA[];
+#ifdef SAMSUNG_CAMERA_HARDWARE
+    static const char EFFECT_CARTOONIZE[];
+    static const char EFFECT_POINT_RED_YELLOW[];
+    static const char EFFECT_POINT_GREEN[];
+    static const char EFFECT_POINT_BLUE[];
+    static const char EFFECT_VINTAGE_COLD[];
+    static const char EFFECT_VINTAGE_WARM[];
+    static const char EFFECT_WASHED[];
+#endif
 #ifdef QCOM_HARDWARE
     static const char EFFECT_EMBOSS[];
     static const char EFFECT_SKETCH[];
