@@ -1048,7 +1048,7 @@ status_t AwesomePlayer::play_l() {
 #ifdef QCOM_ENHANCED_AUDIO
 #ifdef USE_TUNNEL_MODE
                 // Create tunnel player if tunnel mode is enabled
-                ALOGW("Trying to create tunnel player mIsTunnelAudio %d, \
+                ALOGV("Trying to create tunnel player mIsTunnelAudio %d, \
                         LPAPlayer::mObjectsAlive %d, \
                         TunnelPlayer::mTunnelObjectsAlive = %d,\
                         (mAudioPlayer == NULL) %d",
@@ -1080,16 +1080,46 @@ status_t AwesomePlayer::play_l() {
                     }
                 }
 #endif
-                if(ResourceManager::isLPAPlayback(mAudioTrack, mVideoSource,
-                                        mAudioPlayer, mAudioSink, mDurationUs,
-                                        mUseCase, mUseCaseFlag ) ==  true) {
-                    ALOGD("LPAPlayer created, LPA MODE detected mime %s duration %lld", mime, mDurationUs);
-                    bool initCheck =  false;
-                    mAudioPlayer = new LPAPlayer(mAudioSink, initCheck, this);
-                    if(!initCheck) {
-                         ALOGE("deleting Tunnel Player - initCheck failed");
-                         delete mAudioPlayer;
-                         mAudioPlayer = NULL;
+                int32_t nchannels = 0;
+                if(mAudioTrack != NULL) {
+                    sp<MetaData> format = mAudioTrack->getFormat();
+                    if(format != NULL) {
+                        format->findInt32( kKeyChannelCount, &nchannels );
+                        ALOGV("nchannels %d;LPA will be skipped if nchannels is > 2 or nchannels == 0",nchannels);
+                    }
+                }
+                char lpaDecode[PROPERTY_VALUE_MAX];
+                uint32_t minDurationForLPA = LPA_MIN_DURATION_USEC_DEFAULT;
+                char minUserDefDuration[PROPERTY_VALUE_MAX];
+                char minUserDefDurationDef[PROPERTY_VALUE_MAX];
+                snprintf(minUserDefDurationDef, sizeof(minUserDefDurationDef), "%d", LPA_MIN_DURATION_USEC_DEFAULT);
+                property_get("lpa.decode",lpaDecode,"0");
+                property_get("lpa.min_duration",minUserDefDuration,minUserDefDurationDef);
+                minDurationForLPA = atoi(minUserDefDuration);
+                if(minDurationForLPA < LPA_MIN_DURATION_USEC_ALLOWED) {
+                    if(mAudioPlayer == NULL) {
+                        ALOGE("LPAPlayer::Clip duration setting of less than 30sec not supported, defaulting to 60sec");
+                        minDurationForLPA = LPA_MIN_DURATION_USEC_DEFAULT;
+                    }
+                }
+                if((strcmp("true",lpaDecode) == 0) && (mAudioPlayer == NULL) &&
+#ifdef USE_TUNNEL_MODE
+                   (tunnelObjectsAlive < TunnelPlayer::getTunnelObjectsAliveMax()) &&
+#endif
+                   (nchannels && (nchannels <= 2)))
+                {
+                    ALOGV("LPAPlayer::getObjectsAlive() %d",LPAPlayer::mObjectsAlive);
+                    if ( mDurationUs > minDurationForLPA
+                         && (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG) || !strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AAC))
+                         && LPAPlayer::mObjectsAlive == 0 && mVideoSource == NULL) {
+                        ALOGD("LPAPlayer created, LPA MODE detected mime %s duration %lld", mime, mDurationUs);
+                        bool initCheck =  false;
+                        mAudioPlayer = new LPAPlayer(mAudioSink, initCheck, this);
+                        if(!initCheck) {
+                             ALOGE("deleting Tunnel Player - initCheck failed");
+                             delete mAudioPlayer;
+                             mAudioPlayer = NULL;
+                        }
                     }
                 }
                 if(mAudioPlayer == NULL) {
@@ -1714,10 +1744,29 @@ status_t AwesomePlayer::initAudioDecoder() {
         // For LPA Playback use the decoder without OMX layer
         char *matchComponentName = NULL;
         int64_t durationUs;
-
-        if(ResourceManager::isLPAPlayback(mAudioTrack, mVideoSource,
-                mAudioPlayer, mAudioSink, mDurationUs,
-                mUseCase, mUseCaseFlag) == true) {
+        uint32_t flags = 0;
+        char lpaDecode[128];
+        uint32_t minDurationForLPA = LPA_MIN_DURATION_USEC_DEFAULT;
+        char minUserDefDuration[PROPERTY_VALUE_MAX];
+        char minUserDefDurationDef[PROPERTY_VALUE_MAX];
+        snprintf(minUserDefDurationDef, sizeof(minUserDefDurationDef), "%d", LPA_MIN_DURATION_USEC_DEFAULT);
+        property_get("lpa.decode",lpaDecode,"0");
+        property_get("lpa.min_duration",minUserDefDuration,minUserDefDurationDef);
+        minDurationForLPA = atoi(minUserDefDuration);
+        if(minDurationForLPA < LPA_MIN_DURATION_USEC_ALLOWED) {
+            ALOGE("LPAPlayer::Clip duration setting of less than 30sec not supported, defaulting to 60sec");
+            minDurationForLPA = LPA_MIN_DURATION_USEC_DEFAULT;
+        }
+        if (mAudioTrack->getFormat()->findInt64(kKeyDuration, &durationUs)) {
+            Mutex::Autolock autoLock(mMiscStateLock);
+            if (mDurationUs < 0 || durationUs > mDurationUs) {
+                mDurationUs = durationUs;
+            }
+        }
+        if ( mDurationUs > minDurationForLPA
+             && (!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG) || !strcasecmp(mime,MEDIA_MIMETYPE_AUDIO_AAC))
+             && LPAPlayer::mObjectsAlive == 0 && mVideoSource == NULL && (strcmp("true",lpaDecode) == 0)
+             && (nchannels && (nchannels <= 2)) ) {
             char nonOMXDecoder[128];
             if(!strcasecmp(mime, MEDIA_MIMETYPE_AUDIO_MPEG)) {
                 ALOGD("matchComponentName is set to MP3Decoder %lld, mime %s",mDurationUs,mime);
